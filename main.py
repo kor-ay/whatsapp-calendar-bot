@@ -1,85 +1,70 @@
 from flask import Flask, request
-from twilio.rest import Client
-from apscheduler.schedulers.background import BackgroundScheduler
-import openai
+from twilio.twiml.messaging_response import MessagingResponse
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
-reminder_file = reminders.json
 
-# OpenAI (ChatGPT) ayarları
-openai.api_key = os.environ.get(OPENAI_API_KEY)
+REMINDERS_FILE = 'reminders.json'
 
-# Twilio ayarları
-TWILIO_ACCOUNT_SID = os.environ.get(TWILIO_ACCOUNT_SID)
-TWILIO_AUTH_TOKEN = os.environ.get(TWILIO_AUTH_TOKEN)
-TWILIO_PHONE_NUMBER = os.environ.get(TWILIO_PHONE_NUMBER)
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+if not os.path.exists(REMINDERS_FILE):
+    with open(REMINDERS_FILE, 'w') as f:
+        json.dump([], f)
 
-# Hatırlatma verilerini saklamak için JSON dosyası oluştur
-def load_reminders()
-    try
-        with open(reminder_file, r) as f
-            return json.load(f)
-    except
-        return []
+def load_reminders():
+    with open(REMINDERS_FILE, 'r') as f:
+        return json.load(f)
 
-def save_reminders(data)
-    with open(reminder_file, w) as f
-        json.dump(data, f, indent=2)
+def save_reminders(reminders):
+    with open(REMINDERS_FILE, 'w') as f:
+        json.dump(reminders, f)
 
-# Zamanı gelen hatırlatmaları gönder
-def check_reminders()
-    now = datetime.now().strftime(%Y-%m-%d %H%M)
+def check_reminders():
+    now = datetime.now().strftime('%Y-%m-%d %H:%M')
     reminders = load_reminders()
-    remaining = []
-    for r in reminders
-        if r[time] == now
-            client.messages.create(
-                from_=TWILIO_PHONE_NUMBER,
-                to=r[to],
-                body=f🔔 Hatırlatma zamanı {r['message']}
-            )
-        else
-            remaining.append(r)
-    save_reminders(remaining)
+    to_send = [r for r in reminders if r['time'] == now]
+    for r in to_send:
+        send_whatsapp(r['number'], f"🔔 Hatırlatma: {r['text']}")
+        reminders.remove(r)
+    save_reminders(reminders)
 
-# Her dakika kontrol eden zamanlayıcı
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=check_reminders, trigger=interval, minutes=1)
-scheduler.start()
-
-# Webhook WhatsApp mesajı geldiğinde çalışır
-@app.route(webhook, methods=[POST])
-def whatsapp_webhook()
-    incoming_msg = request.values.get('Body', '').strip()
-    from_number = request.values.get('From', '')
-    print(fGelen mesaj {incoming_msg})
-
-    # ChatGPT'den tarihsaat bulmasını iste
-    prompt = fŞu metindeki tarih ve saati net bir şekilde belirt '{incoming_msg}'. Format YYYY-MM-DD HHMM. Sadece tarih ve saati ver, başka bir şey yazma.
-    response = openai.ChatCompletion.create(
-        model=gpt-3.5-turbo,
-        messages=[{role user, content prompt}]
+def send_whatsapp(to, message):
+    from twilio.rest import Client
+    client = Client(os.environ['TWILIO_ACCOUNT_SID'], os.environ['TWILIO_AUTH_TOKEN'])
+    client.messages.create(
+        from_=os.environ['TWILIO_PHONE_NUMBER'],
+        body=message,
+        to=to
     )
 
-    result = response.choices[0].message.content.strip()
+@app.route("/webhook", methods=['POST'])
+def whatsapp_webhook():
+    incoming_msg = request.values.get('Body', '').strip()
+    from_number = request.values.get('From', '').replace('whatsapp:', '')
 
-    try
-        # Format kontrolü
-        reminder_time = datetime.strptime(result, %Y-%m-%d %H%M)
-        save_data = load_reminders()
-        save_data.append({
-            to from_number,
-            message incoming_msg,
-            time result
-        })
-        save_reminders(save_data)
-        return ✅ Hatırlatma kaydedildi!
-    except
-        return ⛔️ Tarihsaat algılanamadı. Lütfen net bir tarih ve saat içeren bir mesaj gönder.
+    resp = MessagingResponse()
 
-if __name__ == __main__
-    app.run(host=0.0.0.0, port=10000)
+    try:
+        if "|" not in incoming_msg:
+            raise ValueError
+        time_str, text = incoming_msg.split("|", 1)
+        dt = datetime.strptime(time_str.strip(), '%d.%m.%Y %H:%M')
+        reminder = {'time': dt.strftime('%Y-%m-%d %H:%M'), 'text': text.strip(), 'number': f'whatsapp:{from_number}'}
+        reminders = load_reminders()
+        reminders.append(reminder)
+        save_reminders(reminders)
+        resp.message(f"✅ Hatırlatma ayarlandı: {time_str.strip()} -> {text.strip()}")
+    except:
+        resp.message("⛔ Format geçersiz. Lütfen şöyle yaz:\n`25.05.2025 14:00 | Toplantı`")
+
+    return str(resp)
+
+# Zamanlayıcı başlat
+scheduler = BackgroundScheduler()
+scheduler.add_job(check_reminders, 'interval', minutes=1)
+scheduler.start()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
