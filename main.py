@@ -2,7 +2,6 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from openai import OpenAI
 import os
-import json
 import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
@@ -44,35 +43,58 @@ def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
 
-    # Tarihi doğru timezone ile parse et
-    now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
-    parsed_time = dateparser.parse(
-        incoming_msg,
-        settings={
-            "RELATIVE_BASE": now,
-            "TIMEZONE": "Europe/Istanbul",
-            "TO_TIMEZONE": "UTC",
-            "RETURN_AS_TIMEZONE_AWARE": True
-        }
+    system_prompt = (
+        "Sen bir kişisel asistan botsun. Kullanıcının doğal dilde verdiği mesajlardan görevleri ve zamanı ayıkla.\n"
+        "Sadece şu formatta cevap ver: `görev metni | YYYY-MM-DD HH:MM`\n"
+        "Eğer mesajda zaman yoksa, 'Tarih algılanamadı' yaz."
     )
 
-    if parsed_time:
-        task_text = incoming_msg
-        task_time = parsed_time.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
-        task_list.append({"text": task_text, "time": task_time, "user": from_number})
-        readable_time = parsed_time.strftime("%d %B %Y %H:%M")
-        reply = f"✅ Anladım! {readable_time} tarihinde '{task_text}' görevini hatırlatacağım."
-    elif incoming_msg.lower().startswith("liste"):
-        user_tasks = [t for t in task_list if t['user'] == from_number]
-        if not user_tasks:
-            reply = "📒 Görev listesi boş."
+    try:
+        chat = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": incoming_msg}
+            ]
+        )
+
+        reply = chat.choices[0].message.content.strip()
+
+        if reply.lower().startswith("tarih algılanamadı"):
+            final_reply = "📝 Lütfen bir tarih ve saat içeren görev girin. Örneğin: '7 dakika sonra su içmeyi hatırlat'."
+        elif "|" in reply:
+            task_text, task_time_text = reply.split("|")
+            now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
+            parsed_time = dateparser.parse(
+                task_time_text.strip(),
+                settings={
+                    "RELATIVE_BASE": now,
+                    "TIMEZONE": "Europe/Istanbul",
+                    "TO_TIMEZONE": "UTC",
+                    "RETURN_AS_TIMEZONE_AWARE": True
+                }
+            )
+            if parsed_time:
+                task_time = parsed_time.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+                task_list.append({"text": task_text.strip(), "time": task_time, "user": from_number})
+                readable_time = parsed_time.strftime("%d %B %Y %H:%M")
+                final_reply = f"✅ Anladım! {readable_time} tarihinde '{task_text.strip()}' görevini hatırlatacağım."
+            else:
+                final_reply = "📝 Zamanı anlayamadım. Lütfen daha açık yaz." 
+        elif incoming_msg.lower().startswith("liste"):
+            user_tasks = [t for t in task_list if t['user'] == from_number]
+            if not user_tasks:
+                final_reply = "📒 Görev listesi boş."
+            else:
+                final_reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
         else:
-            reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
-    else:
-        reply = "📝 Lütfen bir tarih ve saat içeren görev girin. Örneğin: '7 dakika sonra su içmeyi hatırlat'."
+            final_reply = reply  # fallback: botun cevabı doğrudan dön
+
+    except Exception as e:
+        final_reply = f"⛔️ Hata oluştu: {e}"
 
     twilio_response = MessagingResponse()
-    twilio_response.message(reply)
+    twilio_response.message(final_reply)
     return str(twilio_response)
 
 @app.route("/ping", methods=["GET"])
