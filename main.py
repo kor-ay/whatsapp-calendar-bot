@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
 import dateparser
 import pytz
+import json
 
 app = Flask(__name__)
 
@@ -19,22 +20,39 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
-task_list = []
+tasks_file = "tasks.json"
+
+def load_tasks():
+    try:
+        with open(tasks_file, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_tasks():
+    with open(tasks_file, "w") as f:
+        json.dump(task_list, f)
+
+# Görev listesi
+task_list = load_tasks()
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-# Zamanı gelen görevleri kontrol et ve WhatsApp'tan gönder
+# Zamanı gelen görevleri kontrol et
 def check_tasks():
     now = datetime.datetime.now(pytz.timezone("Europe/Istanbul")).strftime("%Y-%m-%d %H:%M")
     for task in list(task_list):
-        if task['time'] == now:
+        if task['time'] == now and task['status'] == 'pending':
+            message = f"🔔 Hatırlatma: {task['task']}"
+            if task.get("assignee"):
+                message += f" ({task['assignee']})"
             twilio_client.messages.create(
-                body=f"🔔 Hatırlatma: {task['text']}",
+                body=message,
                 from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
                 to=task['user']
             )
-            task_list.remove(task)
+            task['status'] = 'done'
+    save_tasks()
 
 scheduler.add_job(check_tasks, 'interval', minutes=1)
 
@@ -44,9 +62,12 @@ def whatsapp_webhook():
     from_number = request.values.get('From', '')
 
     system_prompt = (
-        "Sen bir kişisel asistan botsun. Kullanıcının doğal dilde verdiği mesajlardan görevleri ve zamanı ayıkla.\n"
-        "Sadece şu formatta cevap ver: `görev metni | YYYY-MM-DD HH:MM`\n"
-        "Eğer mesajda zaman yoksa, 'Tarih algılanamadı' yaz."
+        "Sen şirket içi bir WhatsApp asistanısın. Kullanıcılara yardım edersin."
+        " Mesajdan görev, tarih ve kişiyi çıkartırsın."
+        " Şu formatta yanıt ver: `görev metni | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`"
+        " Eğer tarih yoksa 'Tarih algılanamadı' yaz."
+        " Sohbet mesajlarını da anlayabilir, yanıtlayabilirsin."
+        " Koray senin ana kullanıcın. Tanıdığın kişiler: Ahmet (tasarımcı), Zeynep (reklam), Can (sosyal medya), Merve (yönetici)."
     )
 
     try:
@@ -63,10 +84,14 @@ def whatsapp_webhook():
         if reply.lower().startswith("tarih algılanamadı"):
             final_reply = "📝 Lütfen bir tarih ve saat içeren görev girin. Örneğin: '7 dakika sonra su içmeyi hatırlat'."
         elif "|" in reply:
-            task_text, task_time_text = reply.split("|")
+            parts = [p.strip() for p in reply.split("|")]
+            task_text = parts[0]
+            time_text = parts[1] if len(parts) > 1 else ""
+            assignee = parts[2] if len(parts) > 2 else ""
+
             now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
             parsed_time = dateparser.parse(
-                task_time_text.strip(),
+                time_text,
                 settings={
                     "RELATIVE_BASE": now,
                     "TIMEZONE": "Europe/Istanbul",
@@ -74,21 +99,32 @@ def whatsapp_webhook():
                     "RETURN_AS_TIMEZONE_AWARE": True
                 }
             )
+
             if parsed_time:
                 task_time = parsed_time.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
-                task_list.append({"text": task_text.strip(), "time": task_time, "user": from_number})
+                task_list.append({
+                    "owner": "Koray",
+                    "task": task_text,
+                    "time": task_time,
+                    "assignee": assignee,
+                    "user": from_number,
+                    "status": "pending"
+                })
+                save_tasks()
                 readable_time = parsed_time.strftime("%d %B %Y %H:%M")
-                final_reply = f"✅ Anladım! {readable_time} tarihinde '{task_text.strip()}' görevini hatırlatacağım."
+                final_reply = f"✅ Görev eklendi: {task_text} ({readable_time}) {f'- {assignee}' if assignee else ''}"
             else:
-                final_reply = "📝 Zamanı anlayamadım. Lütfen daha açık yaz." 
+                final_reply = "📝 Zamanı anlayamadım. Lütfen daha açık yaz."
         elif incoming_msg.lower().startswith("liste"):
-            user_tasks = [t for t in task_list if t['user'] == from_number]
+            user_tasks = [t for t in task_list if t['user'] == from_number and t['status'] == 'pending']
             if not user_tasks:
                 final_reply = "📒 Görev listesi boş."
             else:
-                final_reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
+                final_reply = "📒 Görevler:\n" + "\n".join([
+                    f"{t['task']} - {t['time']} {f'({t['assignee']})' if t.get('assignee') else ''}" for t in user_tasks
+                ])
         else:
-            final_reply = reply  # fallback: botun cevabı doğrudan dön
+            final_reply = reply
 
     except Exception as e:
         final_reply = f"⛔️ Hata oluştu: {e}"
