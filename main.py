@@ -61,8 +61,12 @@ def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
 
+    # Gerçek zaman ve tarih bilgisi eklenmiş system_prompt
+    istanbul_now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
+    formatted_now = istanbul_now.strftime("%Y-%m-%d %H:%M")
+
     system_prompt = (
-        "Sen bir görev yöneticisisin. Kullanıcılardan gelen mesajları analiz ederek görev, tarih ve gerekirse ilgili kişiyi çıkartırsın. "
+        f"Bugünün tarihi {formatted_now}. Sen bir görev yöneticisisin. Kullanıcılardan gelen mesajları analiz ederek görev, tarih ve gerekirse ilgili kişiyi çıkartırsın. "
         "Cevabını yalnızca şu formatta ver: `görev açıklaması | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`\n"
         "Tarih yoksa en yakın mantıklı zamanı tahmin et, ama tamamen belirsizse 'Tarih algılanamadı' yaz.\n"
         "Sohbet gerekiyorsa, nazikçe sohbet edebilirsin.\n"
