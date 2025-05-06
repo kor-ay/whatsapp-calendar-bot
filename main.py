@@ -18,7 +18,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
+# Basit bir görev listesi (bellekte tutulur)
 task_list = []
 scheduler = BackgroundScheduler()
 scheduler.start()
@@ -29,7 +29,7 @@ def check_tasks():
     for task in list(task_list):
         if task['time'] == now:
             twilio_client.messages.create(
-                body=f"ὑ4 Hatırlatma: {task['text']}",
+                body=f"🔔 Hatırlatma: {task['text']}",
                 from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
                 to=task['user']
             )
@@ -44,7 +44,7 @@ def whatsapp_webhook():
 
     system_prompt = (
         "Sen bir kişisel asistan botsun. WhatsApp üzerinden verilen görevleri takip edersin. "
-        "Kullanıcı sana doğal dilde bir görev yazabilir ("25 Mayıs saat 14:00 diş randevum var"). "
+        "Kullanıcı sana doğal dilde bir görev yazabilir (\"25 Mayıs saat 14:00 diş randevum var\"). "
         "Sen bu metni işleyip aşağıdaki formatta kısa bir yanıt vermelisin:\n"
         "`görev açıklaması | YYYY-MM-DD HH:MM`\n"
         "Eğer kullanıcı görevleri görmek istiyorsa, sadece 'liste:' ile başlayan bir metinle görevleri döndür. "
@@ -66,10 +66,13 @@ def whatsapp_webhook():
 
         reply = response.choices[0].message.content.strip()
 
-        # Eğer yanıt içinde datetime varsa görev listesine ekle
         if "|" in reply:
             task_text, task_time = reply.split("|")
-            task_list.append({"text": task_text.strip(), "time": task_time.strip(), "user": from_number})
+            task_list.append({
+                "text": task_text.strip(),
+                "time": task_time.strip(),
+                "user": from_number
+            })
             reply = f"✅ Görev kaydedildi: {task_text.strip()} ({task_time.strip()})"
         elif reply.lower().startswith("liste:"):
             user_tasks = [t for t in task_list if t['user'] == from_number]
@@ -83,6 +86,10 @@ def whatsapp_webhook():
     twilio_response = MessagingResponse()
     twilio_response.message(reply)
     return str(twilio_response)
+
+@app.route("/ping", methods=["GET"])
+def ping():
+    return "OK", 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
