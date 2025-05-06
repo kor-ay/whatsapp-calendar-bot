@@ -6,6 +6,7 @@ import json
 import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
+import dateparser
 
 app = Flask(__name__)
 
@@ -18,7 +19,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# Basit bir görev listesi (bellekte tutulur)
+# Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
 task_list = []
 scheduler = BackgroundScheduler()
 scheduler.start()
@@ -42,46 +43,23 @@ def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
 
-    system_prompt = (
-        "Sen bir kişisel asistan botsun. WhatsApp üzerinden verilen görevleri takip edersin. "
-        "Kullanıcı sana doğal dilde bir görev yazabilir (\"25 Mayıs saat 14:00 diş randevum var\"). "
-        "Sen bu metni işleyip aşağıdaki formatta kısa bir yanıt vermelisin:\n"
-        "`görev açıklaması | YYYY-MM-DD HH:MM`\n"
-        "Eğer kullanıcı görevleri görmek istiyorsa, sadece 'liste:' ile başlayan bir metinle görevleri döndür. "
-        "Lütfen sadece bu iki tür yanıta sadık kal."
-    )
+    # Tarihi doğrudan biz hesaplıyoruz
+    now = datetime.datetime.now()
+    parsed_time = dateparser.parse(incoming_msg, settings={"RELATIVE_BASE": now})
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": incoming_msg}
-    ]
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            temperature=0.5,
-            max_tokens=500
-        )
-
-        reply = response.choices[0].message.content.strip()
-
-        if "|" in reply:
-            task_text, task_time = reply.split("|")
-            task_list.append({
-                "text": task_text.strip(),
-                "time": task_time.strip(),
-                "user": from_number
-            })
-            reply = f"✅ Görev kaydedildi: {task_text.strip()} ({task_time.strip()})"
-        elif reply.lower().startswith("liste:"):
-            user_tasks = [t for t in task_list if t['user'] == from_number]
-            if not user_tasks:
-                reply = "📒 Görev listesi boş."
-            else:
-                reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
-    except Exception as e:
-        reply = f"⛔️ Hata oluştu: {e}"
+    if parsed_time:
+        task_text = incoming_msg
+        task_time = parsed_time.strftime("%Y-%m-%d %H:%M")
+        task_list.append({"text": task_text, "time": task_time, "user": from_number})
+        reply = f"✅ Görev kaydedildi: {task_text} ({task_time})"
+    elif incoming_msg.lower().startswith("liste"):
+        user_tasks = [t for t in task_list if t['user'] == from_number]
+        if not user_tasks:
+            reply = "📒 Görev listesi boş."
+        else:
+            reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
+    else:
+        reply = "📝 Lütfen bir tarih ve saat içeren görev girin. Örneğin: '7 dakika sonra su içmeyi hatırlat'."
 
     twilio_response = MessagingResponse()
     twilio_response.message(reply)
