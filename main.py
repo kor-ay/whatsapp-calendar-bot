@@ -29,7 +29,7 @@ def check_tasks():
     for task in list(task_list):
         if task['time'] == now:
             twilio_client.messages.create(
-                body=f"🔔 Hatırlatma: {task['text']}",
+                body=f"ὑ4 Hatırlatma: {task['text']}",
                 from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
                 to=task['user']
             )
@@ -43,8 +43,12 @@ def whatsapp_webhook():
     from_number = request.values.get('From', '')
 
     system_prompt = (
-        "Sen bir kişisel asistan botsun. Görevleri hatırlatırsın, görevleri listelersin ve WhatsApp üzerinden verilen görevleri takip edersin. "
-        "Eğer kullanıcı yeni bir görev yazarsa ve içinde tarih/saat varsa, bunu kaydet. Eğer kullanıcı görevleri görmek istiyorsa, görev listesini yaz."
+        "Sen bir kişisel asistan botsun. WhatsApp üzerinden verilen görevleri takip edersin. "
+        "Kullanıcı sana doğal dilde bir görev yazabilir ("25 Mayıs saat 14:00 diş randevum var"). "
+        "Sen bu metni işleyip aşağıdaki formatta kısa bir yanıt vermelisin:\n"
+        "`görev açıklaması | YYYY-MM-DD HH:MM`\n"
+        "Eğer kullanıcı görevleri görmek istiyorsa, sadece 'liste:' ile başlayan bir metinle görevleri döndür. "
+        "Lütfen sadece bu iki tür yanıta sadık kal."
     )
 
     messages = [
