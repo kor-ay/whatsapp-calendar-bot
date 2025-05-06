@@ -40,9 +40,9 @@ scheduler.start()
 
 # Zamanı gelen görevleri kontrol et
 def check_tasks():
-    now = datetime.datetime.now(pytz.timezone("Europe/Istanbul")).strftime("%Y-%m-%d %H:%M")
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
     for task in list(task_list):
-        if task['time'] == now and task['status'] == 'pending':
+        if task['time'] == now_utc and task['status'] == 'pending':
             message = f"🔔 Hatırlatma: {task['task']}"
             if task.get("assignee"):
                 message += f" ({task['assignee']})"
@@ -62,12 +62,11 @@ def whatsapp_webhook():
     from_number = request.values.get('From', '')
 
     system_prompt = (
-        "Sen şirket içi bir WhatsApp asistanısın. Kullanıcılara yardım edersin."
-        " Mesajdan görev, tarih ve kişiyi çıkartırsın."
-        " Şu formatta yanıt ver: `görev metni | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`"
-        " Eğer tarih yoksa 'Tarih algılanamadı' yaz."
-        " Sohbet mesajlarını da anlayabilir, yanıtlayabilirsin."
-        " Koray senin ana kullanıcın. Tanıdığın kişiler: Ahmet (tasarımcı), Zeynep (reklam), Can (sosyal medya), Merve (yönetici)."
+        "Sen bir görev yöneticisisin. Kullanıcılardan gelen mesajları analiz ederek görev, tarih ve gerekirse ilgili kişiyi çıkartırsın. "
+        "Cevabını yalnızca şu formatta ver: `görev açıklaması | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`\n"
+        "Tarih yoksa en yakın mantıklı zamanı tahmin et, ama tamamen belirsizse 'Tarih algılanamadı' yaz.\n"
+        "Sohbet gerekiyorsa, nazikçe sohbet edebilirsin.\n"
+        "Örnek: '5 dakika sonra su iç' → `Su iç | 2025-05-06 15:02`"
     )
 
     try:
@@ -111,7 +110,7 @@ def whatsapp_webhook():
                     "status": "pending"
                 })
                 save_tasks()
-                readable_time = parsed_time.strftime("%d %B %Y %H:%M")
+                readable_time = parsed_time.astimezone(pytz.timezone("Europe/Istanbul")).strftime("%d %B %Y %H:%M")
                 final_reply = f"✅ Görev eklendi: {task_text} ({readable_time}) {f'- {assignee}' if assignee else ''}"
             else:
                 final_reply = "📝 Zamanı anlayamadım. Lütfen daha açık yaz."
