@@ -1,70 +1,54 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import json
+import openai
 import os
-from datetime import datetime, timedelta
-from apscheduler.schedulers.background import BackgroundScheduler
+import json
+import datetime
 
 app = Flask(__name__)
 
-REMINDERS_FILE = 'reminders.json'
+# API Anahtarları
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-if not os.path.exists(REMINDERS_FILE):
-    with open(REMINDERS_FILE, 'w') as f:
-        json.dump([], f)
+openai.api_key = OPENAI_API_KEY
 
-def load_reminders():
-    with open(REMINDERS_FILE, 'r') as f:
-        return json.load(f)
-
-def save_reminders(reminders):
-    with open(REMINDERS_FILE, 'w') as f:
-        json.dump(reminders, f)
-
-def check_reminders():
-    now = datetime.now().strftime('%Y-%m-%d %H:%M')
-    reminders = load_reminders()
-    to_send = [r for r in reminders if r['time'] == now]
-    for r in to_send:
-        send_whatsapp(r['number'], f"🔔 Hatırlatma: {r['text']}")
-        reminders.remove(r)
-    save_reminders(reminders)
-
-def send_whatsapp(to, message):
-    from twilio.rest import Client
-    client = Client(os.environ['TWILIO_ACCOUNT_SID'], os.environ['TWILIO_AUTH_TOKEN'])
-    client.messages.create(
-        from_=os.environ['TWILIO_PHONE_NUMBER'],
-        body=message,
-        to=to
-    )
+# Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
+task_list = []
 
 @app.route("/webhook", methods=['POST'])
 def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
-    from_number = request.values.get('From', '').replace('whatsapp:', '')
+    from_number = request.values.get('From', '')
 
-    resp = MessagingResponse()
+    system_prompt = (
+        "Sen bir kişisel asistan botsun. Görevleri hatırlatırsın, görevleri listelersin ve WhatsApp üzerinden verilen görevleri takip edersin. "
+        "Eğer kullanıcı yeni bir görev yazarsa, bunu kaydet ve uygun şekilde yanıt ver. "
+        "Eğer kullanıcı görevleri görmek istiyorsa, görev listesini yaz."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": incoming_msg}
+    ]
 
     try:
-        if "|" not in incoming_msg:
-            raise ValueError
-        time_str, text = incoming_msg.split("|", 1)
-        dt = datetime.strptime(time_str.strip(), '%d.%m.%Y %H:%M')
-        reminder = {'time': dt.strftime('%Y-%m-%d %H:%M'), 'text': text.strip(), 'number': f'whatsapp:{from_number}'}
-        reminders = load_reminders()
-        reminders.append(reminder)
-        save_reminders(reminders)
-        resp.message(f"✅ Hatırlatma ayarlandı: {time_str.strip()} -> {text.strip()}")
-    except:
-        resp.message("⛔ Format geçersiz. Lütfen şöyle yaz:\n`25.05.2025 14:00 | Toplantı`")
+        response = openai.ChatCompletion.create(
+            model="gpt-4",  # GPT-4 varsa, yoksa 'gpt-3.5-turbo'
+            messages=messages,
+            temperature=0.5,
+            max_tokens=500
+        )
 
-    return str(resp)
+        reply = response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        reply = f"⛔️ Hata oluştu: {e}"
 
-# Zamanlayıcı başlat
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_reminders, 'interval', minutes=1)
-scheduler.start()
+    twilio_response = MessagingResponse()
+    twilio_response.message(reply)
+    return str(twilio_response)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
