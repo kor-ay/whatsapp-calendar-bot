@@ -40,9 +40,11 @@ scheduler.start()
 
 # Zamanı gelen görevleri kontrol et
 def check_tasks():
-    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
     for task in list(task_list):
-        if task['time'] == now_utc and task['status'] == 'pending':
+        task_time = datetime.datetime.strptime(task['time'], "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
+        diff = (task_time - now_utc).total_seconds()
+        if diff <= 300 and task['status'] == 'pending':
             message = f"🔔 Hatırlatma: {task['task']}"
             if task.get("assignee"):
                 message += f" ({task['assignee']})"
@@ -70,6 +72,7 @@ def whatsapp_webhook():
         "Cevabını yalnızca şu formatta ver: `görev açıklaması | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`\n"
         "Tarih yoksa en yakın mantıklı zamanı tahmin et, ama tamamen belirsizse 'Tarih algılanamadı' yaz.\n"
         "Sohbet gerekiyorsa, nazikçe sohbet edebilirsin.\n"
+        "Kişi adlarını değiştirme.\n"
         "Örnek: '5 dakika sonra su iç' → `Su iç | 2025-05-06 15:02`"
     )
 
