@@ -1,6 +1,7 @@
 Flask
 twilio
-openai>=1.0.0
+openai
 APScheduler
 python-dotenv
 gunicorn
+dateparser
