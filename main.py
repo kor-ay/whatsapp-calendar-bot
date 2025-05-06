@@ -2,11 +2,11 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from openai import OpenAI
 import os
-import json
 import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.rest import Client
 import dateparser
+import pytz
 
 app = Flask(__name__)
 
@@ -19,16 +19,18 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
+# Görev listesi ve zamanlayıcı
 task_list = []
 scheduler = BackgroundScheduler()
 scheduler.start()
 
-# Zamanı gelen görevleri kontrol et ve WhatsApp'tan gönder
+# Görevleri her dakika kontrol et
 def check_tasks():
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
     for task in list(task_list):
-        if task['time'] == now:
+        task_time = datetime.datetime.strptime(task['time'], "%Y-%m-%d %H:%M").replace(tzinfo=pytz.timezone("Europe/Istanbul"))
+        diff = (task_time - now).total_seconds()
+        if 0 <= diff < 60:
             twilio_client.messages.create(
                 body=f"🔔 Hatırlatma: {task['text']}",
                 from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
@@ -43,15 +45,18 @@ def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
 
-    # Tarihi doğrudan biz hesaplıyoruz
-    now = datetime.datetime.now()
-    parsed_time = dateparser.parse(incoming_msg, settings={"RELATIVE_BASE": now})
+    now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
+    parsed_time = dateparser.parse(
+        incoming_msg,
+        settings={"RELATIVE_BASE": now, "TIMEZONE": "Europe/Istanbul", "RETURN_AS_TIMEZONE_AWARE": True}
+    )
 
     if parsed_time:
         task_text = incoming_msg
-        task_time = parsed_time.strftime("%Y-%m-%d %H:%M")
-        task_list.append({"text": task_text, "time": task_time, "user": from_number})
-        reply = f"✅ Görev kaydedildi: {task_text} ({task_time})"
+        task_time_str = parsed_time.strftime("%Y-%m-%d %H:%M")
+        task_list.append({"text": task_text, "time": task_time_str, "user": from_number})
+        readable_time = parsed_time.strftime("%d %B %Y %H:%M")
+        reply = f"✅ Anladım! {readable_time} tarihinde '{task_text}' görevini hatırlatacağım."
     elif incoming_msg.lower().startswith("liste"):
         user_tasks = [t for t in task_list if t['user'] == from_number]
         if not user_tasks:
@@ -59,7 +64,7 @@ def whatsapp_webhook():
         else:
             reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
     else:
-        reply = "📝 Lütfen bir tarih ve saat içeren görev girin. Örneğin: '7 dakika sonra su içmeyi hatırlat'."
+        reply = "📝 Lütfen bir tarih ve saat içeren görev girin. Örneğin: '3 gün sonra 07:00' gibi."
 
     twilio_response = MessagingResponse()
     twilio_response.message(reply)
