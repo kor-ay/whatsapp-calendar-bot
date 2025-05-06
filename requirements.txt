@@ -1,7 +1,5 @@
 Flask
 twilio
-google-api-python-client
-google-auth
-google-auth-oauthlib
-dateparser
-gunicorn
+openai
+APScheduler
+python-dotenv
