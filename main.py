@@ -4,6 +4,7 @@ import openai
 import os
 import json
 import datetime
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 
@@ -17,6 +18,25 @@ openai.api_key = OPENAI_API_KEY
 
 # Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
 task_list = []
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+# Zamanı gelen görevleri kontrol et ve WhatsApp'tan gönder
+from twilio.rest import Client
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+def check_tasks():
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    for task in list(task_list):
+        if task['time'] == now:
+            client.messages.create(
+                body=f"🔔 Hatırlatma: {task['text']}",
+                from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
+                to=task['user']
+            )
+            task_list.remove(task)
+
+scheduler.add_job(check_tasks, 'interval', minutes=1)
 
 @app.route("/webhook", methods=['POST'])
 def whatsapp_webhook():
@@ -25,8 +45,7 @@ def whatsapp_webhook():
 
     system_prompt = (
         "Sen bir kişisel asistan botsun. Görevleri hatırlatırsın, görevleri listelersin ve WhatsApp üzerinden verilen görevleri takip edersin. "
-        "Eğer kullanıcı yeni bir görev yazarsa, bunu kaydet ve uygun şekilde yanıt ver. "
-        "Eğer kullanıcı görevleri görmek istiyorsa, görev listesini yaz."
+        "Eğer kullanıcı yeni bir görev yazarsa ve içinde tarih/saat varsa, bunu kaydet. Eğer kullanıcı görevleri görmek istiyorsa, görev listesini yaz."
     )
 
     messages = [
@@ -43,6 +62,17 @@ def whatsapp_webhook():
         )
 
         reply = response['choices'][0]['message']['content'].strip()
+
+        # Eğer yanıt içinde datetime varsa görev listesine ekle
+        if "|" in reply:
+            task_text, task_time = reply.split("|")
+            task_list.append({"text": task_text.strip(), "time": task_time.strip(), "user": from_number})
+            reply = f"✅ Görev kaydedildi: {task_text.strip()} ({task_time.strip()})"
+        elif reply.lower().startswith("liste:"):
+            if not task_list:
+                reply = "🗒 Görev listesi boş."
+            else:
+                reply = "🗒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in task_list if t['user'] == from_number])
     except Exception as e:
         reply = f"⛔️ Hata oluştu: {e}"
 
