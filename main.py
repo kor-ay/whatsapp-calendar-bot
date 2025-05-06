@@ -1,10 +1,11 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import openai
+from openai import OpenAI
 import os
 import json
 import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
+from twilio.rest import Client
 
 app = Flask(__name__)
 
@@ -14,7 +15,8 @@ TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # Basit bir görev listesi (bellekte tutulur, her restart'ta sıfırlanır)
 task_list = []
@@ -22,14 +24,11 @@ scheduler = BackgroundScheduler()
 scheduler.start()
 
 # Zamanı gelen görevleri kontrol et ve WhatsApp'tan gönder
-from twilio.rest import Client
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
 def check_tasks():
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     for task in list(task_list):
         if task['time'] == now:
-            client.messages.create(
+            twilio_client.messages.create(
                 body=f"🔔 Hatırlatma: {task['text']}",
                 from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
                 to=task['user']
@@ -54,14 +53,14 @@ def whatsapp_webhook():
     ]
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",  # GPT-4 varsa, yoksa 'gpt-3.5-turbo'
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=messages,
             temperature=0.5,
             max_tokens=500
         )
 
-        reply = response['choices'][0]['message']['content'].strip()
+        reply = response.choices[0].message.content.strip()
 
         # Eğer yanıt içinde datetime varsa görev listesine ekle
         if "|" in reply:
@@ -69,10 +68,11 @@ def whatsapp_webhook():
             task_list.append({"text": task_text.strip(), "time": task_time.strip(), "user": from_number})
             reply = f"✅ Görev kaydedildi: {task_text.strip()} ({task_time.strip()})"
         elif reply.lower().startswith("liste:"):
-            if not task_list:
-                reply = "🗒 Görev listesi boş."
+            user_tasks = [t for t in task_list if t['user'] == from_number]
+            if not user_tasks:
+                reply = "📒 Görev listesi boş."
             else:
-                reply = "🗒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in task_list if t['user'] == from_number])
+                reply = "📒 Görevler:\n" + "\n".join([f"{t['text']} ({t['time']})" for t in user_tasks])
     except Exception as e:
         reply = f"⛔️ Hata oluştu: {e}"
 
