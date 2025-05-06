@@ -121,7 +121,8 @@ def whatsapp_webhook():
                 final_reply = "📒 Görev listesi boş."
             else:
                 final_reply = "📒 Görevler:\n" + "\n".join([
-                    f"{t['task']} - {t['time']} {f'({t['assignee']})' if t.get('assignee') else ''}" for t in user_tasks
+                    f"{t['task']} - {t['time']} ({t['assignee']})" if t.get('assignee') else f"{t['task']} - {t['time']}"
+                    for t in user_tasks
                 ])
         else:
             final_reply = reply
