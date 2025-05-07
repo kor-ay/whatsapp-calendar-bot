@@ -53,8 +53,7 @@ def check_tasks():
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     for task in list(task_list):
         task_time = datetime.datetime.strptime(task['time'], "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
-        diff = (task_time - now_utc).total_seconds()
-        if 0 <= diff <= 60 and task['status'] == 'pending':
+        if task['status'] == 'pending' and now_utc >= task_time:
             message = f"🔔 Hatırlatma: {task['task']}"
             if task.get("assignee"):
                 message += f" ({task['assignee']})"
@@ -79,7 +78,6 @@ def send_daily_summary():
             )
 
 # Eğlenceli mesajlar ve hatırlatıcılar
-
 def send_fun_messages():
     now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
     hour = now.hour
@@ -148,13 +146,12 @@ def whatsapp_webhook():
                 settings={
                     "RELATIVE_BASE": now,
                     "TIMEZONE": "Europe/Istanbul",
-                    "TO_TIMEZONE": "UTC",
                     "RETURN_AS_TIMEZONE_AWARE": True
                 }
             )
 
             if parsed_time:
-                task_time = parsed_time.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+                task_time = parsed_time.strftime("%Y-%m-%d %H:%M")
                 task_list.append({
                     "owner": "Koray",
                     "task": task_text,
@@ -164,7 +161,7 @@ def whatsapp_webhook():
                     "status": "pending"
                 })
                 save_tasks()
-                readable_time = parsed_time.astimezone(pytz.timezone("Europe/Istanbul")).strftime("%d %B %Y %H:%M")
+                readable_time = parsed_time.strftime("%d %B %Y %H:%M")
                 final_reply = f"✅ Görev eklendi: {task_text} ({readable_time}) {f'- {assignee}' if assignee else ''}"
             else:
                 final_reply = "📝 Zamanı anlayamadım. Lütfen daha açık yaz."
