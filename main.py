@@ -44,7 +44,7 @@ def check_tasks():
     for task in list(task_list):
         task_time = datetime.datetime.strptime(task['time'], "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
         diff = (task_time - now_utc).total_seconds()
-        if diff <= 300 and task['status'] == 'pending':
+        if -600 <= diff <= 600 and task['status'] == 'pending':
             message = f"🔔 Hatırlatma: {task['task']}"
             if task.get("assignee"):
                 message += f" ({task['assignee']})"
@@ -56,7 +56,20 @@ def check_tasks():
             task['status'] = 'done'
     save_tasks()
 
+# Günlük sabah özeti
+
+def send_daily_summary():
+    ist_time = datetime.datetime.now(pytz.timezone("Europe/Istanbul")).strftime("%Y-%m-%d")
+    for task in task_list:
+        if task['status'] == 'pending' and task['time'].startswith(ist_time):
+            twilio_client.messages.create(
+                body=f"🗓 Bugünkü görev: {task['task']} - {task['time']}" + (f" ({task['assignee']})" if task.get('assignee') else ""),
+                from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
+                to=task['user']
+            )
+
 scheduler.add_job(check_tasks, 'interval', minutes=1)
+scheduler.add_job(send_daily_summary, 'cron', hour=9, minute=0, timezone='Europe/Istanbul')
 
 @app.route("/webhook", methods=['POST'])
 def whatsapp_webhook():
@@ -68,10 +81,11 @@ def whatsapp_webhook():
     formatted_now = istanbul_now.strftime("%Y-%m-%d %H:%M")
 
     system_prompt = (
-        f"Bugünün tarihi {formatted_now}. Sen bir görev yöneticisisin. Kullanıcılardan gelen mesajları analiz ederek görev, tarih ve gerekirse ilgili kişiyi çıkartırsın. "
+        f"Bugünün tarihi {formatted_now}. Sen bir görev yöneticisisin ama aynı zamanda sohbet edebilen bir kişisel asistan gibisin.\n"
+        "Kullanıcılardan gelen mesajları analiz ederek görev, tarih ve gerekirse ilgili kişiyi çıkartırsın.\n"
         "Cevabını yalnızca şu formatta ver: `görev açıklaması | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`\n"
         "Tarih yoksa en yakın mantıklı zamanı tahmin et, ama tamamen belirsizse 'Tarih algılanamadı' yaz.\n"
-        "Sohbet gerekiyorsa, nazikçe sohbet edebilirsin.\n"
+        "Selam, nasılsın, kimim ben gibi sorulara da sıcak şekilde sohbet edebilirsin.\n"
         "Kişi adlarını değiştirme.\n"
         "Örnek: '5 dakika sonra su iç' → `Su iç | 2025-05-06 15:02`"
     )
