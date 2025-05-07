@@ -57,7 +57,6 @@ def check_tasks():
     save_tasks()
 
 # Günlük sabah özeti
-
 def send_daily_summary():
     ist_time = datetime.datetime.now(pytz.timezone("Europe/Istanbul")).strftime("%Y-%m-%d")
     for task in task_list:
@@ -68,15 +67,37 @@ def send_daily_summary():
                 to=task['user']
             )
 
+# Eğlenceli mesajlar ve hatırlatıcılar
+
+def send_fun_messages():
+    now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
+    hour = now.hour
+    messages = {
+        9: "☀️ Günaydın! Yeni bir gün, yeni başarılar! Hadi başlayalım!",
+        12: "🍽️ Ohh be, yemek saati! Enerji toplama vakti.",
+        14: "☕ Kahve molası! Yemek sonrası uyku moduna geçmeyelim!",
+        16: "🧠 Bir kahve daha içmeli miyiz? Hadi biraz daha odaklanalım.",
+        18: "🎉 Mesai bitiyor! Bugün harikaydınız, dinlenmeyi unutmayın."
+    }
+    if hour in messages:
+        for task in task_list:
+            if task['status'] == 'pending':
+                twilio_client.messages.create(
+                    body=messages[hour],
+                    from_=f"whatsapp:{TWILIO_PHONE_NUMBER}",
+                    to=task['user']
+                )
+                break
+
 scheduler.add_job(check_tasks, 'interval', minutes=1)
-scheduler.add_job(send_daily_summary, 'cron', hour=9, minute=0, timezone='Europe/Istanbul')
+scheduler.add_job(send_daily_summary, 'cron', hour=8, minute=30, timezone='Europe/Istanbul')
+scheduler.add_job(send_fun_messages, 'cron', hour='9,12,14,16,18', minute=0, timezone='Europe/Istanbul')
 
 @app.route("/webhook", methods=['POST'])
 def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
 
-    # Gerçek zaman ve tarih bilgisi eklenmiş system_prompt
     istanbul_now = datetime.datetime.now(pytz.timezone("Europe/Istanbul"))
     formatted_now = istanbul_now.strftime("%Y-%m-%d %H:%M")
 
