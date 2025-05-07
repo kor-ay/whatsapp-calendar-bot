@@ -21,6 +21,16 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 tasks_file = "tasks.json"
+personnel = [
+    "Koray Yalçın",
+    "Taraneh Hafizi",
+    "Tannaz Samavatian",
+    "Tutia Mohammadaliniah",
+    "Ceyhan İrfanoğlu",
+    "Özlem Özyurt",
+    "Nevin Tekbacak",
+    "Dağhan Fellahoğlu"
+]
 
 def load_tasks():
     try:
@@ -109,6 +119,7 @@ def whatsapp_webhook():
         "Tarih yoksa en yakın mantıklı zamanı tahmin et, ama tamamen belirsizse 'Tarih algılanamadı' yaz.\n"
         "Selam, nasılsın, kimim ben gibi sorulara da sıcak şekilde sohbet edebilirsin.\n"
         "Kişi adlarını değiştirme.\n"
+        f"Personel listesi: {', '.join(personnel)}\n"
         "Örnek: '5 dakika sonra su iç' → `Su iç | 2025-05-06 15:02`"
     )
 
@@ -157,7 +168,7 @@ def whatsapp_webhook():
                 final_reply = f"✅ Görev eklendi: {task_text} ({readable_time}) {f'- {assignee}' if assignee else ''}"
             else:
                 final_reply = "📝 Zamanı anlayamadım. Lütfen daha açık yaz."
-        elif incoming_msg.lower().startswith("liste"):
+        elif incoming_msg.lower() in ["liste", "görevleri listele"]:
             user_tasks = [t for t in task_list if t['user'] == from_number and t['status'] == 'pending']
             if not user_tasks:
                 final_reply = "📒 Görev listesi boş."
@@ -166,6 +177,8 @@ def whatsapp_webhook():
                     f"{t['task']} - {t['time']} ({t['assignee']})" if t.get('assignee') else f"{t['task']} - {t['time']}"
                     for t in user_tasks
                 ])
+        elif incoming_msg.lower() in ["personelleri listele", "çalışanları listele"]:
+            final_reply = "👥 Personel Listesi:\n" + "\n".join(personnel)
         else:
             final_reply = reply
 
