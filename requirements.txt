@@ -1,6 +1,8 @@
-flask
-twilio
-openai
-apscheduler
-dateparser
-pytz
+Flask==3.0.3
+Twilio==9.3.0
+openai==1.51.0
+APScheduler==3.10.4
+dateparser==2.0.0
+pytz==2024.2
+tenacity==9.0.0
+portalocker==2.10.1
