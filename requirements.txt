@@ -1,6 +1,6 @@
 Flask==3.0.3
 Twilio==9.3.0
-openai>=1.0.0
+openai==0.28.1
 APScheduler==3.10.4
 dateparser==1.2.1
 pytz==2024.2
