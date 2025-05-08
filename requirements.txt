@@ -1,7 +1,6 @@
-Flask
+flask
 twilio
 openai
-APScheduler
-python-dotenv
-gunicorn
+apscheduler
 dateparser
+pytz
