@@ -94,7 +94,7 @@ def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
     from_number = request.values.get('From', '')
 
-    if incoming_msg.lower() == "görevlerim":
+    if incoming_msg.lower() in ["görevlerim", "liste", "listele", "görevleri listele"]:
         task_list = load_tasks()
         user_tasks = [t for t in task_list if t['user'] == from_number and t['status'] == 'pending']
         reply = "📋 Görevleriniz:\n" + "\n".join([f"{t['task']} ({t['time']})" for t in user_tasks]) if user_tasks else "📭 Bekleyen göreviniz yok."
