@@ -3,7 +3,7 @@ import atexit
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
-from openai import OpenAI
+import openai
 import os
 import datetime
 import json
@@ -23,7 +23,7 @@ TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
@@ -109,14 +109,14 @@ def whatsapp_webhook():
     )
 
     try:
-        chat = client.chat.completions.create(
+        chat = openai.ChatCompletion.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": incoming_msg}
             ]
         )
-        reply = chat.choices[0].message.content.strip()
+        reply = chat.choices[0].message["content"].strip()
 
         if reply.lower().startswith("tarih algılanamadı"):
             final_reply = "📝 Lütfen bir tarih ve saat içeren görev girin."
