@@ -136,13 +136,13 @@ def whatsapp_webhook():
         twilio_response.message(reply)
         return str(twilio_response)
 
-    system_prompt = (
-        f"Bugünün tarihi {datetime.datetime.now(pytz.timezone('Europe/Istanbul')).strftime('%Y-%m-%d %H:%M')}.
-        Sen bir görev yöneticisi ve asistan botsun. Cevabını şu formatta ver: `görev açıklaması | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`.
-        Kişiler: " + ", ".join(personnel) + ".\n"
-        "Relatif zaman ifadelerini (örneğin '15 dakika sonra') anlayabilir ve yorumlayabilirsin.\n"
-        "Eğer tekrarlayan görev ise yanıtın sonunda REPEATING yaz."
-    )
+    system_prompt = f"""
+    Bugünün tarihi {datetime.datetime.now(pytz.timezone('Europe/Istanbul')).strftime('%Y-%m-%d %H:%M')}.
+    Sen bir görev yöneticisi ve asistan botsun. Cevabını şu formatta ver: `görev açıklaması | YYYY-MM-DD HH:MM | kişi (isteğe bağlı)`.
+    Kişiler: {', '.join(personnel)}.
+    Relatif zaman ifadelerini (örneğin '15 dakika sonra') anlayabilir ve yorumlayabilirsin.
+    Eğer tekrarlayan görev ise yanıtın sonunda REPEATING yaz.
+    """
 
     try:
         chat = openai.ChatCompletion.create(
